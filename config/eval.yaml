@@ -1,0 +1,40 @@
+# Team-owned quality gate thresholds — reviewed in PRs
+gates:
+  hallucination_rate:
+    block_threshold: 0.05
+    warn_threshold: 0.03
+  p95_latency_ms:
+    block_threshold: 4000
+    warn_threshold: 3000
+  cost_regression_pct:
+    block_threshold: 50
+    warn_threshold: 20
+  faithfulness:
+    block_threshold: 0.60
+    warn_threshold: 0.75
+  answer_relevancy:
+    block_threshold: 0.70
+    warn_threshold: 0.78
+
+eval:
+  dataset_path: data/golden_dataset/questions.yaml
+  scope_on_pr: full
+  parallel_workers: 10
+  timeout_per_question_s: 30
+  batch_size: 10
+
+scorers:
+  hallucination:
+    model: claude-haiku-4-5
+    enabled: true
+  relevancy:
+    model_name: all-MiniLM-L6-v2
+    enabled: true
+  ragas:
+    enabled: true
+    judge_model: claude-haiku-4-5
+
+agents:
+  enabled: true
+  model: claude-sonnet-4-5
+  run_on: failure

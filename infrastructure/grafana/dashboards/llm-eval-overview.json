@@ -1,0 +1,57 @@
+{
+  "title": "LLM Eval Overview",
+  "uid": "llm-eval-overview",
+  "timezone": "browser",
+  "schemaVersion": 39,
+  "version": 1,
+  "panels": [
+    {
+      "id": 1,
+      "title": "Hallucination Rate",
+      "type": "timeseries",
+      "gridPos": { "h": 8, "w": 12, "x": 0, "y": 0 },
+      "targets": [
+        {
+          "rawSql": "SELECT started_at AS time, value FROM run_metrics rm JOIN eval_runs er ON er.run_id = rm.run_id WHERE rm.metric_name = 'hallucination_rate' ORDER BY 1",
+          "format": "time_series"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "percentunit",
+          "thresholds": {
+            "steps": [
+              { "color": "green", "value": null },
+              { "color": "red", "value": 0.05 }
+            ]
+          }
+        }
+      }
+    },
+    {
+      "id": 2,
+      "title": "Latency p50 / p95",
+      "type": "timeseries",
+      "gridPos": { "h": 8, "w": 12, "x": 12, "y": 0 },
+      "targets": [
+        {
+          "rawSql": "SELECT started_at AS time, value, metric_name FROM run_metrics rm JOIN eval_runs er ON er.run_id = rm.run_id WHERE rm.metric_name IN ('p50_latency_ms', 'p95_latency_ms') ORDER BY 1",
+          "format": "time_series"
+        }
+      ],
+      "fieldConfig": { "defaults": { "unit": "ms" } }
+    },
+    {
+      "id": 3,
+      "title": "Run History",
+      "type": "table",
+      "gridPos": { "h": 8, "w": 24, "x": 0, "y": 8 },
+      "targets": [
+        {
+          "rawSql": "SELECT run_id, git_sha, trigger_type, status, started_at, finished_at FROM eval_runs ORDER BY started_at DESC LIMIT 50",
+          "format": "table"
+        }
+      ]
+    }
+  ]
+}

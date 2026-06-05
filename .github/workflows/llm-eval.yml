@@ -1,0 +1,117 @@
+name: LLM Eval Pipeline
+
+on:
+  pull_request:
+    paths:
+      - 'prompts/**'
+      - 'config/**'
+      - 'data/golden_dataset/**'
+      - 'data/knowledge_base/**'
+      - 'src/llm_eval/**'
+  push:
+    branches: [main]
+    paths:
+      - 'prompts/**'
+      - 'config/**'
+  schedule:
+    - cron: '0 2 * * *'
+  workflow_dispatch:
+    inputs:
+      scope:
+        description: 'Eval scope'
+        required: false
+        default: 'full'
+        type: choice
+        options:
+          - full
+          - retrieval
+          - smoke
+
+concurrency:
+  group: llm-eval-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  validate:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - name: Install package
+        run: pip install -e ".[dev]"
+      - name: Validate golden dataset
+        run: llm-eval validate-dataset
+
+  eval:
+    needs: validate
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Install dependencies
+        run: pip install -e ".[scorers,dev]"
+
+      - name: Determine scope
+        id: scope
+        run: |
+          if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
+            echo "value=${{ inputs.scope }}" >> $GITHUB_OUTPUT
+          elif [ "${{ github.event_name }}" = "schedule" ]; then
+            echo "value=full" >> $GITHUB_OUTPUT
+          else
+            echo "value=full" >> $GITHUB_OUTPUT
+          fi
+
+      - name: Determine trigger
+        id: trigger
+        run: |
+          if [ "${{ github.event_name }}" = "pull_request" ]; then
+            echo "value=pr" >> $GITHUB_OUTPUT
+          elif [ "${{ github.event_name }}" = "schedule" ]; then
+            echo "value=scheduled" >> $GITHUB_OUTPUT
+          else
+            echo "value=manual" >> $GITHUB_OUTPUT
+          fi
+
+      - name: Run eval pipeline
+        env:
+          ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
+          DATABASE_URL: ${{ secrets.DATABASE_URL }}
+          S3_BUCKET: ${{ secrets.S3_BUCKET }}
+          AWS_ACCESS_KEY_ID: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GITHUB_REPOSITORY: ${{ github.repository }}
+          DASHBOARD_URL: ${{ vars.DASHBOARD_URL }}
+          EVAL_MODE: local
+        run: |
+          llm-eval run \
+            --scope ${{ steps.scope.outputs.value }} \
+            --trigger ${{ steps.trigger.outputs.value }} \
+            --sha ${{ github.event.pull_request.head.sha || github.sha }} \
+            --branch ${{ github.head_ref || github.ref_name }} \
+            --output eval-run.json
+
+      - name: Upload eval artifacts
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: eval-run-${{ github.run_id }}
+          path: eval-run.json
+          retention-days: 30
+
+      - name: Run failure analysis on PR
+        if: failure() && github.event_name == 'pull_request'
+        env:
+          ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GITHUB_REPOSITORY: ${{ github.repository }}
+        run: |
+          pip install -e ".[agents]" || true
+          llm-eval analyze --scope ${{ steps.scope.outputs.value }} --pr ${{ github.event.pull_request.number }} || true

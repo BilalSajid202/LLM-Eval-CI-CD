@@ -14,7 +14,7 @@ from rich.table import Table
 
 from llm_eval.config.loader import load_settings
 from llm_eval.dataset.validator import validate_dataset_file
-from llm_eval.models.types import TriggerType
+from llm_eval.models.types import EvalRun, TriggerType
 from llm_eval.service import EvalService
 
 console = Console()
@@ -37,6 +37,8 @@ def run(scope: str, trigger: str, sha: str | None, branch: str | None, output: s
     """Execute the eval pipeline."""
     service = EvalService()
     trigger_type = TriggerType(trigger)
+    if trigger_type == TriggerType.PR and scope == "full":
+        scope = service.eval_config.eval.scope_on_pr
 
     console.print(f"[bold]Running eval[/bold] scope={scope} trigger={trigger}")
 
@@ -65,7 +67,13 @@ def run(scope: str, trigger: str, sha: str | None, branch: str | None, output: s
 def gate(run_id: str, sha: str) -> None:
     """Post merge gate status for an existing run."""
     service = EvalService()
-    run_data = service.local_storage.load_run(UUID(run_id))
+    try:
+        run_uuid = UUID(run_id)
+    except ValueError:
+        console.print(f"[red]Invalid run UUID: {run_id}[/red]")
+        sys.exit(1)
+
+    run_data = service.local_storage.load_run(run_uuid)
     if not run_data:
         console.print(f"[red]Run not found: {run_id}[/red]")
         sys.exit(1)
@@ -104,7 +112,7 @@ def analyze(scope: str, pr: int | None) -> None:
         sys.exit(1)
 
 
-def _print_summary(eval_run) -> None:
+def _print_summary(eval_run: EvalRun) -> None:
     table = Table(title=f"Eval Run {eval_run.run_id}")
     table.add_column("Metric", style="cyan")
     table.add_column("Value", style="green")

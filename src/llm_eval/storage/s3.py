@@ -2,12 +2,14 @@
 
 from __future__ import annotations
 
-import json
+import logging
 from uuid import UUID
 
 from llm_eval.config.loader import AppSettings
 from llm_eval.models.types import QuestionResult
 from llm_eval.storage.local import LocalStorage
+
+logger = logging.getLogger(__name__)
 
 
 class S3Storage:
@@ -50,8 +52,8 @@ class S3Storage:
 class OutputStore:
     """Unified output store — S3 when configured, else local filesystem."""
 
-    def __init__(self, settings: AppSettings):
-        self.local = LocalStorage(settings.local_storage_path)
+    def __init__(self, settings: AppSettings, local: LocalStorage | None = None):
+        self.local = local or LocalStorage(settings.local_storage_path)
         self.s3: S3Storage | None = None
         if settings.s3_bucket:
             self.s3 = S3Storage(
@@ -65,10 +67,13 @@ class OutputStore:
         if self.s3:
             try:
                 return self.s3.save_raw_output(run_id, result)
-            except Exception:
-                pass
+            except Exception as exc:
+                logger.warning("S3 upload failed, using local fallback: %s", exc)
         return self.local.save_raw_output(run_id, result)
 
 
-def create_output_store(settings: AppSettings) -> OutputStore:
-    return OutputStore(settings)
+def create_output_store(
+    settings: AppSettings,
+    local: LocalStorage | None = None,
+) -> OutputStore:
+    return OutputStore(settings, local=local)

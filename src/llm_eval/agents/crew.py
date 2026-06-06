@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import asyncio
 import json
 from pathlib import Path
 
@@ -88,7 +89,7 @@ async def run_failure_analysis(
         verbose=False,
     )
 
-    result = crew.kickoff()
+    result = await asyncio.to_thread(crew.kickoff)
     return f"## EvalBot Analysis\n\n{result}"
 
 

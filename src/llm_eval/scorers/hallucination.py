@@ -43,7 +43,8 @@ class HallucinationScorer(BaseScorer):
                 temperature=0,
                 messages=[{"role": "user", "content": prompt}],
             )
-            text = response.content[0].text if response.content else "{}"
+            block = response.content[0] if response.content else None
+            text = block.text if block and hasattr(block, "text") else "{}"
             start = text.find("{")
             end = text.rfind("}") + 1
             if start >= 0 and end > start:
@@ -71,9 +72,7 @@ class HallucinationScorer(BaseScorer):
 
         async def score_one(r: QuestionResult) -> QuestionResult:
             if r.error:
-                return r.model_copy(
-                    update={"scores": {**r.scores, "hallucination_verdict": 1.0}}
-                )
+                return r
             verdict = await self._judge(r.question, r.answer, r.contexts)
             value = 1.0 if verdict == "hallucinated" else 0.0
             return r.model_copy(
@@ -86,9 +85,10 @@ class HallucinationScorer(BaseScorer):
         return list(await asyncio.gather(*[score_one(r) for r in results]))
 
     async def score(self, results: list[QuestionResult]) -> dict[str, float]:
-        scored = await self.score_per_question(results)
-        valid = [r for r in scored if not r.error]
+        if not any("hallucination_verdict" in r.scores for r in results):
+            results = await self.score_per_question(results)
+        valid = [r for r in results if not r.error and "hallucination_verdict" in r.scores]
         if not valid:
             return {self.name: 0.0}
-        rate = sum(r.scores.get("hallucination_verdict", 0) for r in valid) / len(valid)
+        rate = sum(r.scores["hallucination_verdict"] for r in valid) / len(valid)
         return {self.name: rate}

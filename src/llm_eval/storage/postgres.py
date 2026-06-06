@@ -50,7 +50,7 @@ class PostgresStorage:
                         run.started_at,
                         run.finished_at,
                         run.status.value,
-                        json.dumps([g.model_dump() for g in run.gate_results]),
+                        json.dumps([g.model_dump(mode="json") for g in run.gate_results]),
                         run.scope,
                     ),
                 )
@@ -97,7 +97,7 @@ class PostgresStorage:
                                 qr.latency_ms,
                                 qr.cost_usd,
                                 s3_key,
-                                json.dumps(qr.model_dump()),
+                                json.dumps(qr.model_dump(mode="json")),
                             ),
                         )
             conn.commit()

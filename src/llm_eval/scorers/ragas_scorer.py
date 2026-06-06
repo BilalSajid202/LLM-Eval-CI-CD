@@ -39,7 +39,6 @@ class RagasScorer(BaseScorer):
         }
 
     async def score_per_question(self, results: list[QuestionResult]) -> list[QuestionResult]:
-        aggregates = self._compute_heuristic(results)
         scored = []
         for r in results:
             if r.error or not r.answer:
@@ -69,6 +68,15 @@ class RagasScorer(BaseScorer):
         return scored
 
     async def score(self, results: list[QuestionResult]) -> dict[str, float]:
+        if any("faithfulness" in r.scores for r in results):
+            valid = [r for r in results if not r.error and r.answer and "faithfulness" in r.scores]
+            if not valid:
+                return {"faithfulness": 0.0, "context_recall": 0.0}
+            return {
+                "faithfulness": sum(r.scores["faithfulness"] for r in valid) / len(valid),
+                "context_recall": sum(r.scores.get("context_recall", 0) for r in valid) / len(valid),
+            }
+
         try:
             from datasets import Dataset
             from ragas import evaluate

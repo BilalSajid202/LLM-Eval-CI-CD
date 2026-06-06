@@ -22,9 +22,11 @@ venv/
 .DS_Store
 Thumbs.db
 
-# Model caches
+# Model caches (keep src/llm_eval/models/ package tracked)
 .cache/
 models/
+!src/llm_eval/models/
+!src/llm_eval/models/**
 
 # Coverage
 .coverage

@@ -2,8 +2,9 @@
 
 from __future__ import annotations
 
+import logging
 import subprocess
-from datetime import datetime
+from datetime import datetime, timezone
 from pathlib import Path
 from uuid import UUID
 
@@ -20,11 +21,21 @@ from llm_eval.execution.collector import ResponseCollector
 from llm_eval.execution.runner import EvalRunner
 from llm_eval.gates.evaluator import GateEvaluator
 from llm_eval.gates.github import GitHubStatusPoster
-from llm_eval.models.types import EvalRun, RunStatus, TriggerType
+from llm_eval.models.types import (
+    EvalRun,
+    GateResult,
+    GateStatus,
+    GoldenQuestion,
+    QuestionResult,
+    RunStatus,
+    TriggerType,
+)
 from llm_eval.scorers.orchestrator import ScorerOrchestrator
 from llm_eval.storage.local import LocalStorage
 from llm_eval.storage.postgres import PostgresStorage
 from llm_eval.storage.s3 import create_output_store
+
+logger = logging.getLogger(__name__)
 
 
 def _get_git_sha() -> str:
@@ -51,6 +62,64 @@ def _get_git_branch() -> str:
         return "local"
 
 
+def _resolve_scope(scope: str, trigger_type: TriggerType, eval_config: EvalConfig) -> str:
+    if trigger_type == TriggerType.PR and scope == "full":
+        return eval_config.eval.scope_on_pr
+    return scope
+
+
+def _check_per_question_gates(
+    scored_results: list[QuestionResult],
+    questions: list[GoldenQuestion],
+) -> list[GateResult]:
+    q_map = {q.id: q for q in questions}
+    sla_violations = 0
+    sla_checked = 0
+    relevancy_violations = 0
+    relevancy_checked = 0
+
+    for result in scored_results:
+        question = q_map.get(result.question_id)
+        if not question:
+            continue
+        if question.sla_latency_ms is not None:
+            sla_checked += 1
+            if result.latency_ms > question.sla_latency_ms:
+                sla_violations += 1
+        if question.min_relevancy_score is not None and not result.error:
+            relevancy_checked += 1
+            if result.scores.get("answer_relevancy", 0) < question.min_relevancy_score:
+                relevancy_violations += 1
+
+    extra: list[GateResult] = []
+    if sla_checked and sla_violations:
+        extra.append(
+            GateResult(
+                metric="sla_latency_violations",
+                status=GateStatus.WARN,
+                value=float(sla_violations),
+                threshold=0.0,
+                message=(
+                    f"{sla_violations}/{sla_checked} questions exceeded per-question SLA latency"
+                ),
+            )
+        )
+    if relevancy_checked and relevancy_violations:
+        extra.append(
+            GateResult(
+                metric="min_relevancy_violations",
+                status=GateStatus.WARN,
+                value=float(relevancy_violations),
+                threshold=0.0,
+                message=(
+                    f"{relevancy_violations}/{relevancy_checked} questions "
+                    "below min_relevancy_score"
+                ),
+            )
+        )
+    return extra
+
+
 class EvalService:
     def __init__(
         self,
@@ -71,11 +140,27 @@ class EvalService:
         self.eval_config = eval_config
         self.pipeline_config = pipeline_config
         self.root = root or _project_root()
-        self.output_store = create_output_store(settings)
         self.local_storage = LocalStorage(settings.local_storage_path)
+        self.output_store = create_output_store(settings, self.local_storage)
         self.postgres: PostgresStorage | None = None
         if settings.database_url:
             self.postgres = PostgresStorage(settings.database_url)
+
+    def _should_run_agents(self, run: EvalRun) -> bool:
+        if not self.eval_config.agents.enabled:
+            return False
+
+        has_block = any(g.status == GateStatus.BLOCK for g in run.gate_results)
+        has_warn = any(g.status == GateStatus.WARN for g in run.gate_results)
+        run_on = self.eval_config.agents.run_on
+
+        if run_on == "always":
+            return True
+        if run_on == "warn":
+            return has_block or has_warn
+        if run_on == "failure":
+            return run.status == RunStatus.FAILED or has_block
+        return run.status == RunStatus.FAILED
 
     async def run_eval(
         self,
@@ -84,6 +169,7 @@ class EvalService:
         git_sha: str | None = None,
         git_branch: str | None = None,
     ) -> EvalRun:
+        scope = _resolve_scope(scope, trigger_type, self.eval_config)
         config_hash = compute_config_hash(
             self.eval_config.model_dump(),
             self.pipeline_config.model_dump(),
@@ -101,6 +187,7 @@ class EvalService:
         runner = EvalRunner(self.settings, self.eval_config, self.pipeline_config, self.root)
         collector = ResponseCollector(self.pipeline_config)
         scorers = ScorerOrchestrator(self.settings, self.eval_config)
+        questions = runner.load_questions(scope)
 
         raw_results = await runner.run(scope)
         enriched = collector.enrich_with_costs(raw_results)
@@ -124,20 +211,24 @@ class EvalService:
 
         gate_evaluator = GateEvaluator(self.eval_config, cost_baseline)
         run.gate_results = gate_evaluator.evaluate(run.metrics)
+        run.gate_results.extend(_check_per_question_gates(scored_results, questions))
         state, _ = gate_evaluator.overall_state(run.gate_results)
         run.status = RunStatus.PASSED if state == "success" else RunStatus.FAILED
-        run.finished_at = datetime.utcnow()
+        run.finished_at = datetime.now(timezone.utc)
 
-        s3_keys: dict[str, str] = {}
         for result in scored_results:
-            s3_keys[result.question_id] = self.output_store.save_raw_output(run.run_id, result)
+            self.output_store.save_raw_output(run.run_id, result)
 
         self.local_storage.save_run(run)
         if self.postgres:
             try:
+                s3_keys = {
+                    r.question_id: f"{run.run_id}/{r.question_id}/response.json"
+                    for r in scored_results
+                }
                 self.postgres.save_run(run, scored_results, s3_keys)
-            except Exception:
-                pass
+            except Exception as exc:
+                logger.warning("Failed to save run to Postgres: %s", exc)
 
         return run
 
@@ -158,11 +249,8 @@ class EvalService:
         diff_path: str | None = None,
     ) -> EvalRun:
         run = await self.run_eval(scope=scope, trigger_type=TriggerType.PR)
-        has_failure = run.status == RunStatus.FAILED or any(
-            g.status.value in ("block", "warn") for g in run.gate_results
-        )
 
-        if has_failure and self.eval_config.agents.enabled:
+        if self._should_run_agents(run):
             try:
                 from llm_eval.agents.crew import run_failure_analysis
 
@@ -179,7 +267,9 @@ class EvalService:
                     )
                     poster.post_pr_comment(pr_number, comment)
             except ImportError:
-                pass
+                logger.info("CrewAI not installed; skipping agent analysis")
+            except Exception as exc:
+                logger.warning("Agent failure analysis failed: %s", exc)
 
         self.post_gate(run)
         return run

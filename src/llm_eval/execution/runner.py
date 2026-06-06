@@ -66,23 +66,16 @@ class EvalRunner:
                 error=str(exc),
             )
 
-    async def _run_batch(self, batch: list[GoldenQuestion]) -> list[QuestionResult]:
-        return await asyncio.gather(*[self.run_question(q) for q in batch])
-
     async def run_local(self, scope: str = "full") -> list[QuestionResult]:
         questions = self.load_questions(scope)
-        batch_size = self.eval_config.eval.batch_size
         workers = self.eval_config.eval.parallel_workers
-
-        batches = [questions[i : i + batch_size] for i in range(0, len(questions), batch_size)]
         semaphore = asyncio.Semaphore(workers)
 
-        async def run_with_limit(batch: list[GoldenQuestion]) -> list[QuestionResult]:
+        async def run_with_limit(question: GoldenQuestion) -> QuestionResult:
             async with semaphore:
-                return await self._run_batch(batch)
+                return await self.run_question(question)
 
-        batch_results = await asyncio.gather(*[run_with_limit(b) for b in batches])
-        return [r for batch in batch_results for r in batch]
+        return list(await asyncio.gather(*[run_with_limit(q) for q in questions]))
 
     async def run(self, scope: str = "full") -> list[QuestionResult]:
         if self.settings.eval_mode == "modal":

@@ -26,10 +26,16 @@ def test_gates_block_hallucination(project_root):
 
 def test_gates_warn_latency(project_root):
     config = load_eval_config(project_root)
-    metrics = RunMetrics(hallucination_rate=0.01, p95_latency_ms=3500)
+    metrics = RunMetrics(
+        hallucination_rate=0.01,
+        answer_relevancy=0.85,
+        faithfulness=0.80,
+        p95_latency_ms=3500,
+    )
     results = GateEvaluator(config).evaluate(metrics)
     lat = next(r for r in results if r.metric == "p95_latency_ms")
     assert lat.status.value == "warn"
+    assert all(r.status.value != "block" for r in results)
 
 
 def test_cost_regression_block(project_root):

@@ -51,7 +51,8 @@ class RelevancyScorer(BaseScorer):
         return scored
 
     async def score(self, results: list[QuestionResult]) -> dict[str, float]:
-        scored = await self.score_per_question(results)
-        valid = [r.scores.get(self.name, 0) for r in scored if not r.error and r.answer]
+        if not any(self.name in r.scores for r in results):
+            results = await self.score_per_question(results)
+        valid = [r.scores[self.name] for r in results if not r.error and r.answer and self.name in r.scores]
         mean = sum(valid) / len(valid) if valid else 0.0
         return {self.name: mean}

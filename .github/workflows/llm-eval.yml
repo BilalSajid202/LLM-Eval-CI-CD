@@ -13,6 +13,9 @@ on:
     paths:
       - 'prompts/**'
       - 'config/**'
+      - 'src/llm_eval/**'
+      - 'data/golden_dataset/**'
+      - 'data/knowledge_base/**'
   schedule:
     - cron: '0 2 * * *'
   workflow_dispatch:

@@ -2,8 +2,11 @@
 
 from __future__ import annotations
 
+import logging
 import re
 from pathlib import Path
+
+logger = logging.getLogger(__name__)
 
 
 class LocalRetriever:
@@ -16,6 +19,10 @@ class LocalRetriever:
                 rel_path = str(file_path.relative_to(kb_path)).replace("\\", "/")
                 content = file_path.read_text(encoding="utf-8")
                 self.documents.append({"path": rel_path, "content": content})
+        else:
+            logger.warning("Knowledge base path does not exist: %s", kb_path)
+        if not self.documents:
+            logger.warning("No documents loaded from knowledge base: %s", kb_path)
 
     def retrieve(self, query: str) -> list[dict[str, str]]:
         if not self.documents:

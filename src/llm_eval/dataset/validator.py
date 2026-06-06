@@ -14,7 +14,10 @@ class DatasetValidationError(Exception):
         super().__init__(f"Dataset validation failed with {len(errors)} error(s)")
 
 
-def validate_dataset(questions: list[GoldenQuestion]) -> list[str]:
+def validate_dataset(
+    questions: list[GoldenQuestion],
+    knowledge_base_root: Path | None = None,
+) -> list[str]:
     errors: list[str] = []
     seen_ids: set[str] = set()
 
@@ -35,11 +38,23 @@ def validate_dataset(questions: list[GoldenQuestion]) -> list[str]:
         if q.category.value in ("edge_case", "adversarial") and not q.tags:
             errors.append(f"{q.id}: edge_case/adversarial questions should have tags")
 
+        if knowledge_base_root and q.expected_sources:
+            for source in q.expected_sources:
+                source_path = knowledge_base_root / source
+                if not source_path.exists():
+                    errors.append(f"{q.id}: expected_source not found: {source}")
+
     return errors
 
 
-def validate_dataset_file(path: Path | str) -> None:
-    questions = load_golden_dataset(path)
-    errors = validate_dataset(questions)
+def validate_dataset_file(path: Path | str, knowledge_base_root: Path | None = None) -> None:
+    dataset_path = Path(path)
+    if knowledge_base_root is None:
+        from llm_eval.config.loader import _project_root
+
+        knowledge_base_root = _project_root() / "data" / "knowledge_base"
+
+    questions = load_golden_dataset(dataset_path)
+    errors = validate_dataset(questions, knowledge_base_root=knowledge_base_root)
     if errors:
         raise DatasetValidationError(errors)

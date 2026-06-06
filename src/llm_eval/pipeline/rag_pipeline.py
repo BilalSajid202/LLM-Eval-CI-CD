@@ -42,7 +42,11 @@ class RAGPipeline:
         context_block = "\n\n".join(
             f"[{src}]\n{ctx}" for src, ctx in zip(sources, contexts, strict=False)
         )
-        prompt = self.prompt_template.format(context=context_block, question=question)
+        prompt = (
+            self.prompt_template.replace("{context}", context_block).replace(
+                "{question}", question
+            )
+        )
 
         response = await self.llm.ainvoke([HumanMessage(content=prompt)])
         answer = response.content if isinstance(response.content, str) else str(response.content)

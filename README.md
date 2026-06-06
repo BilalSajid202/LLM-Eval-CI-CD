@@ -57,6 +57,8 @@ LLM-Eval-CI-CD/
 | Service layer | `service.py` orchestrator | Single entry for CLI, Actions, and agents |
 | Scorers | Heuristic fallbacks | Works without API keys or heavy ML deps in CI |
 | Infrastructure | `infrastructure/` folder | Docker/Grafana separated from app code |
+| Concurrency | Per-question semaphore | `parallel_workers` caps concurrent questions, not batches |
+| Agents | `agents.run_on` config | CrewAI analysis runs only on configured gate outcomes |
 
 ## Quick Start
 
@@ -68,10 +70,12 @@ source .venv/bin/activate   # Windows: .venv\Scripts\activate
 pip install -e ".[dev]"
 ```
 
-For full scorer support:
+For full scorer support (embedding relevancy + RAGAS metrics):
 ```bash
 pip install -e ".[scorers,agents,modal,dev]"
 ```
+
+Without `[scorers]`, hallucination/relevancy/RAGAS use lightweight heuristics — fine for CI unit tests, but install `[scorers]` for production eval accuracy.
 
 ### 2. Configure
 
@@ -124,6 +128,22 @@ Configured in `config/eval.yaml`:
 | Answer relevancy | < 0.70 | < 0.78 |
 | Cost regression | > 50% vs baseline | > 20% |
 
+Per-question fields in `questions.yaml` (`sla_latency_ms`, `min_relevancy_score`) produce **warn** gates when violated.
+
+### Eval scope on PRs
+
+Set `eval.scope_on_pr` in `config/eval.yaml` (default: `full`). When running with `--trigger pr` and default scope, the CLI uses this value automatically.
+
+### Agent analysis trigger
+
+Set `agents.run_on` in `config/eval.yaml`:
+
+| Value | When CrewAI analysis runs |
+|-------|---------------------------|
+| `failure` | Block-level gate failures only (default) |
+| `warn` | Any warn or block gate |
+| `always` | Every eval run |
+
 ## GitHub Actions
 
 Workflow triggers on changes to:
@@ -159,8 +179,18 @@ llm-eval run --scope full
 
 ```bash
 pytest tests/ -v
-ruff check src tests
+ruff check src tests   # requires pip install -e ".[dev]"
 ```
+
+### Dataset builder
+
+Regenerate the golden dataset from the knowledge base:
+
+```bash
+python scripts/build_golden_dataset.py
+```
+
+The script validates all `expected_sources` paths exist before writing.
 
 ## License
 

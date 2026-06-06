@@ -17,17 +17,22 @@ def load_golden_dataset(path: Path | str) -> list[GoldenQuestion]:
     return [GoldenQuestion.model_validate(item) for item in raw]
 
 
+VALID_SCOPES = ("full", "smoke", "retrieval")
+
+
 def filter_by_scope(
     questions: list[GoldenQuestion],
     scope: str,
 ) -> list[GoldenQuestion]:
+    if scope not in VALID_SCOPES:
+        raise ValueError(
+            f"Invalid scope: {scope!r}. Must be one of: {', '.join(VALID_SCOPES)}"
+        )
     if scope == "full":
         return questions
     if scope == "smoke":
         return questions[:3]
-    if scope == "retrieval":
-        return [q for q in questions if q.expected_sources]
-    return questions
+    return [q for q in questions if q.expected_sources]
 
 
 def group_by_category(questions: list[GoldenQuestion]) -> dict[str, list[GoldenQuestion]]:

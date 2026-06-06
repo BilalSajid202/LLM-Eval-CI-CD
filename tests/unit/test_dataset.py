@@ -30,7 +30,7 @@ def sample_questions() -> list[GoldenQuestion]:
 def test_load_golden_dataset(project_root: Path):
     path = project_root / "data" / "golden_dataset" / "questions.yaml"
     questions = load_golden_dataset(path)
-    assert len(questions) >= 10
+    assert len(questions) >= 100
     assert all(q.id for q in questions)
 
 
@@ -42,6 +42,11 @@ def test_filter_smoke_scope(sample_questions):
 def test_filter_retrieval_scope(sample_questions):
     result = filter_by_scope(sample_questions, "retrieval")
     assert len(result) == 1
+
+
+def test_filter_invalid_scope(sample_questions):
+    with pytest.raises(ValueError, match="Invalid scope"):
+        filter_by_scope(sample_questions, "invalid")
 
 
 def test_validate_dataset_passes(sample_questions):

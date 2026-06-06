@@ -2,11 +2,14 @@
 
 from __future__ import annotations
 
-import json
+import logging
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from uuid import UUID
 
 from llm_eval.models.types import EvalRun, QuestionResult
+
+logger = logging.getLogger(__name__)
 
 
 class LocalStorage:
@@ -38,12 +41,23 @@ class LocalStorage:
     def list_runs(self) -> list[EvalRun]:
         runs = []
         for path in self.runs_path.glob("*.json"):
-            runs.append(EvalRun.model_validate_json(path.read_text(encoding="utf-8")))
+            try:
+                runs.append(EvalRun.model_validate_json(path.read_text(encoding="utf-8")))
+            except Exception as exc:
+                logger.warning("Skipping corrupt run file %s: %s", path, exc)
         return sorted(runs, key=lambda r: r.started_at, reverse=True)
 
     def get_cost_baseline(self, days: int = 7) -> float | None:
-        runs = self.list_runs()
-        costs = [r.metrics.cost_per_query_usd for r in runs if r.metrics]
+        cutoff = datetime.now(timezone.utc) - timedelta(days=days)
+        costs = []
+        for run in self.list_runs():
+            if not run.metrics:
+                continue
+            started = run.started_at
+            if started.tzinfo is None:
+                started = started.replace(tzinfo=timezone.utc)
+            if started >= cutoff:
+                costs.append(run.metrics.cost_per_query_usd)
         if len(costs) < 2:
             return None
         return sum(costs) / len(costs)

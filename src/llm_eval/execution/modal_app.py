@@ -2,6 +2,9 @@
 
 from __future__ import annotations
 
+import asyncio
+import os
+
 import modal
 
 from llm_eval.config.loader import EvalConfig, PipelineConfig
@@ -15,14 +18,18 @@ app = modal.App("llm-eval")
     timeout=300,
     max_containers=20,
 )
-async def eval_worker(question_batch: list[dict]) -> list[dict]:
-    import asyncio
-
+async def eval_worker(
+    question_batch: list[dict],
+    pipeline_config_dict: dict,
+) -> list[dict]:
     from llm_eval.models.types import GoldenQuestion
     from llm_eval.pipeline.rag_pipeline import create_pipeline
 
-    pipeline_config = PipelineConfig()
-    pipeline = create_pipeline(pipeline_config)
+    pipeline_config = PipelineConfig.model_validate(pipeline_config_dict)
+    pipeline = create_pipeline(
+        pipeline_config,
+        api_key=os.environ.get("ANTHROPIC_API_KEY", ""),
+    )
     results = []
 
     for raw in question_batch:
@@ -43,7 +50,7 @@ async def eval_worker(question_batch: list[dict]) -> list[dict]:
                     prompt_tokens=output.prompt_tokens,
                     completion_tokens=output.completion_tokens,
                     latency_ms=latency_ms,
-                ).model_dump()
+                ).model_dump(mode="json")
             )
         except Exception as exc:
             latency_ms = (__import__("time").perf_counter() - start) * 1000
@@ -56,7 +63,7 @@ async def eval_worker(question_batch: list[dict]) -> list[dict]:
                     answer="",
                     latency_ms=latency_ms,
                     error=str(exc),
-                ).model_dump()
+                ).model_dump(mode="json")
             )
 
     return results
@@ -76,15 +83,21 @@ async def run_modal_eval(
         scope,
     )
     batch_size = eval_config.eval.batch_size
+    workers = eval_config.eval.parallel_workers
+    pipeline_dict = pipeline_config.model_dump()
     batches = [
-        [q.model_dump() for q in questions[i : i + batch_size]]
+        [q.model_dump(mode="json") for q in questions[i : i + batch_size]]
         for i in range(0, len(questions), batch_size)
     ]
 
     with app.run():
         all_results: list[dict] = []
-        for batch in batches:
-            batch_results = eval_worker.remote(batch)
-            all_results.extend(batch_results)
+        for i in range(0, len(batches), workers):
+            chunk = batches[i : i + workers]
+            chunk_results = await asyncio.gather(
+                *[asyncio.to_thread(eval_worker.remote, batch, pipeline_dict) for batch in chunk]
+            )
+            for batch_result in chunk_results:
+                all_results.extend(batch_result)
 
     return [QuestionResult.model_validate(r) for r in all_results]

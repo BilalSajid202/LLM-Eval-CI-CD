@@ -1,3 +1,5 @@
+import asyncio
+
 import pytest
 
 from llm_eval.models.types import QuestionResult
@@ -24,47 +26,51 @@ def _make_result(**kwargs) -> QuestionResult:
     return QuestionResult(**defaults)
 
 
-@pytest.mark.asyncio
-async def test_latency_scorer():
+def test_latency_scorer():
     results = [_make_result(latency_ms=100), _make_result(latency_ms=200)]
-    scores = await LatencyScorer().score(results)
+    scores = asyncio.run(LatencyScorer().score(results))
     assert scores["p50_latency_ms"] == 150
     assert scores["p95_latency_ms"] >= 190
 
 
-@pytest.mark.asyncio
-async def test_cost_scorer():
+def test_cost_scorer():
     results = [_make_result(cost_usd=0.002), _make_result(cost_usd=0.004)]
-    scores = await CostScorer().score(results)
+    scores = asyncio.run(CostScorer().score(results))
     assert scores["cost_per_query_usd"] == pytest.approx(0.003)
     assert scores["total_cost_usd"] == pytest.approx(0.006)
 
 
-@pytest.mark.asyncio
-async def test_relevancy_scorer_fallback():
+def test_relevancy_scorer_fallback():
     scorer = RelevancyScorer()
     results = [_make_result()]
-    scored = await scorer.score_per_question(results)
+    scored = asyncio.run(scorer.score_per_question(results))
     assert 0 <= scored[0].scores["answer_relevancy"] <= 1
 
 
-@pytest.mark.asyncio
-async def test_hallucination_heuristic_faithful():
+def test_hallucination_heuristic_faithful():
     scorer = HallucinationScorer(api_key="")
     result = _make_result(
         answer="Enterprise subscriptions can be refunded within 30 days of purchase.",
         contexts=["Enterprise subscriptions can be refunded within 30 days of purchase."],
     )
-    scored = await scorer.score_per_question([result])
-    assert scored[0].metadata.get("hallucination_verdict") in ("faithful", "hallucinated")
+    scored = asyncio.run(scorer.score_per_question([result]))
+    assert scored[0].metadata.get("hallucination_verdict") == "faithful"
 
 
-@pytest.mark.asyncio
-async def test_hallucination_refusal():
+def test_hallucination_error_excluded_from_rate():
+    scorer = HallucinationScorer(api_key="")
+    errored = _make_result(error="timeout", answer="")
+    scored = asyncio.run(scorer.score_per_question([errored]))
+    assert "hallucination_verdict" not in scored[0].scores
+    rate = asyncio.run(scorer.score(scored))
+    assert rate["hallucination_rate"] == 0.0
+
+
+def test_hallucination_refusal():
     scorer = HallucinationScorer(api_key="")
     result = _make_result(
         answer="I don't have enough information to answer that.",
         contexts=[],
     )
-    scored = await scorer.score_per_question([result])
+    scored = asyncio.run(scorer.score_per_question([result]))
     assert scored[0].metadata.get("hallucination_verdict") == "faithful"

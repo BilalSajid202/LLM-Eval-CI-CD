@@ -242,6 +242,4 @@ python scripts/build_golden_dataset.py
 
 The script validates all `expected_sources` paths exist before writing.
 
-## License
 
-MIT

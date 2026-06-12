@@ -23,6 +23,9 @@ class GatesConfig(BaseModel):
     cost_regression_pct: GateThreshold
     faithfulness: GateThreshold
     answer_relevancy: GateThreshold
+    prompt_injection_resistance: GateThreshold | None = None
+    jailbreak_resistance: GateThreshold | None = None
+    accuracy: GateThreshold | None = None
 
 
 class EvalSettings(BaseModel):
@@ -44,6 +47,15 @@ class ScorersConfig(BaseModel):
     hallucination: ScorerConfig = Field(default_factory=ScorerConfig)
     relevancy: ScorerConfig = Field(default_factory=ScorerConfig)
     ragas: ScorerConfig = Field(default_factory=ScorerConfig)
+    security: ScorerConfig = Field(default_factory=ScorerConfig)
+    accuracy: ScorerConfig = Field(default_factory=ScorerConfig)
+
+
+class ReportingConfig(BaseModel):
+    enabled: bool = True
+    auto_export: bool = True
+    formats: list[str] = Field(default_factory=lambda: ["excel", "pdf"])
+    baseline_days: int = 7
 
 
 class AgentsConfig(BaseModel):
@@ -57,6 +69,7 @@ class EvalConfig(BaseModel):
     eval: EvalSettings
     scorers: ScorersConfig = Field(default_factory=ScorersConfig)
     agents: AgentsConfig = Field(default_factory=AgentsConfig)
+    reporting: ReportingConfig = Field(default_factory=ReportingConfig)
 
 
 class ModelConfig(BaseModel):

@@ -58,7 +58,7 @@ jobs:
           python-version: '3.11'
 
       - name: Install dependencies
-        run: pip install -e ".[scorers,dev]"
+        run: pip install -e ".[scorers,reporting,dev]"
 
       - name: Determine scope
         id: scope
@@ -106,7 +106,9 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: eval-run-${{ github.run_id }}
-          path: eval-run.json
+          path: |
+            eval-run.json
+            .eval-storage/reports/**/*
           retention-days: 30
 
       - name: Run failure analysis on PR

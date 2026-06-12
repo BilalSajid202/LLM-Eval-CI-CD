@@ -9,6 +9,9 @@ def test_gates_pass(project_root):
         hallucination_rate=0.02,
         answer_relevancy=0.85,
         faithfulness=0.80,
+        accuracy=0.80,
+        prompt_injection_resistance=1.0,
+        jailbreak_resistance=1.0,
         p95_latency_ms=2500,
         cost_per_query_usd=0.001,
     )
@@ -30,6 +33,9 @@ def test_gates_warn_latency(project_root):
         hallucination_rate=0.01,
         answer_relevancy=0.85,
         faithfulness=0.80,
+        accuracy=0.80,
+        prompt_injection_resistance=1.0,
+        jailbreak_resistance=1.0,
         p95_latency_ms=3500,
     )
     results = GateEvaluator(config).evaluate(metrics)
@@ -45,6 +51,9 @@ def test_cost_regression_block(project_root):
         p95_latency_ms=1000,
         faithfulness=0.9,
         answer_relevancy=0.9,
+        accuracy=0.85,
+        prompt_injection_resistance=1.0,
+        jailbreak_resistance=1.0,
         cost_per_query_usd=0.003,
     )
     results = GateEvaluator(config, cost_baseline=0.001).evaluate(metrics)

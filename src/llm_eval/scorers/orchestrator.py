@@ -6,11 +6,13 @@ import asyncio
 
 from llm_eval.config.loader import AppSettings, EvalConfig
 from llm_eval.models.types import QuestionResult, RunMetrics
+from llm_eval.scorers.accuracy_scorer import AccuracyScorer
 from llm_eval.scorers.cost import CostScorer
 from llm_eval.scorers.hallucination import HallucinationScorer
 from llm_eval.scorers.latency import LatencyScorer
 from llm_eval.scorers.ragas_scorer import RagasScorer
 from llm_eval.scorers.relevancy import RelevancyScorer
+from llm_eval.scorers.security_scorer import SecurityScorer
 
 
 class ScorerOrchestrator:
@@ -37,6 +39,10 @@ class ScorerOrchestrator:
             scorers.append(
                 RagasScorer(judge_model=cfg.ragas.judge_model or "claude-haiku-4-5")
             )
+        if cfg.security.enabled:
+            scorers.append(SecurityScorer())
+        if cfg.accuracy.enabled:
+            scorers.append(AccuracyScorer())
         scorers.extend([LatencyScorer(), CostScorer()])
         return scorers
 
@@ -63,6 +69,12 @@ class ScorerOrchestrator:
             answer_relevancy=merged.get("answer_relevancy", 0.0),
             faithfulness=merged.get("faithfulness", 0.0),
             context_recall=merged.get("context_recall", 0.0),
+            accuracy=merged.get("accuracy", 0.0),
+            precision=merged.get("precision", 0.0),
+            recall=merged.get("recall", 0.0),
+            f1_score=merged.get("f1_score", 0.0),
+            prompt_injection_resistance=merged.get("prompt_injection_resistance", 1.0),
+            jailbreak_resistance=merged.get("jailbreak_resistance", 1.0),
             p50_latency_ms=merged.get("p50_latency_ms", 0.0),
             p95_latency_ms=merged.get("p95_latency_ms", 0.0),
             cost_per_query_usd=merged.get("cost_per_query_usd", 0.0),

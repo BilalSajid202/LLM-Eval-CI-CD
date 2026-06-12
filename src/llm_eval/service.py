@@ -200,6 +200,12 @@ class EvalService:
                 "answer_relevancy": scorer_metrics.answer_relevancy,
                 "faithfulness": scorer_metrics.faithfulness,
                 "context_recall": scorer_metrics.context_recall,
+                "accuracy": scorer_metrics.accuracy,
+                "precision": scorer_metrics.precision,
+                "recall": scorer_metrics.recall,
+                "f1_score": scorer_metrics.f1_score,
+                "prompt_injection_resistance": scorer_metrics.prompt_injection_resistance,
+                "jailbreak_resistance": scorer_metrics.jailbreak_resistance,
             }
         )
 
@@ -230,7 +236,29 @@ class EvalService:
             except Exception as exc:
                 logger.warning("Failed to save run to Postgres: %s", exc)
 
+        if self.eval_config.reporting.enabled and self.eval_config.reporting.auto_export:
+            try:
+                self.generate_report(run, scored_results)
+            except Exception as exc:
+                logger.warning("Failed to generate evaluation report: %s", exc)
+
         return run
+
+    def generate_report(
+        self,
+        run: EvalRun,
+        results: list[QuestionResult] | None = None,
+        formats: list[str] | None = None,
+    ) -> dict[str, str]:
+        from llm_eval.reporting.report_builder import ReportBuilder
+
+        if results is None:
+            results = self.local_storage.load_question_results(run.run_id)
+        builder = ReportBuilder(self.local_storage, self.eval_config)
+        report = builder.build(run, results)
+        paths = builder.export(report, results, formats=formats)
+        logger.info("Evaluation report exported: %s", paths)
+        return paths
 
     def post_gate(self, run: EvalRun, sha: str | None = None) -> bool:
         poster = GitHubStatusPoster(

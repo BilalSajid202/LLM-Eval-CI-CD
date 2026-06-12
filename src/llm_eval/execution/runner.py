@@ -53,6 +53,10 @@ class EvalRunner:
                 prompt_tokens=output.prompt_tokens,
                 completion_tokens=output.completion_tokens,
                 latency_ms=latency_ms,
+                metadata={
+                    "tags": question.tags,
+                    "expected_sources": question.expected_sources,
+                },
             )
         except Exception as exc:
             latency_ms = (time.perf_counter() - start) * 1000
@@ -64,6 +68,10 @@ class EvalRunner:
                 answer="",
                 latency_ms=latency_ms,
                 error=str(exc),
+                metadata={
+                    "tags": question.tags,
+                    "expected_sources": question.expected_sources,
+                },
             )
 
     async def run_local(self, scope: str = "full") -> list[QuestionResult]:

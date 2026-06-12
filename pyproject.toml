@@ -45,6 +45,11 @@ agents = [
     "crewai>=0.80",
     "crewai-tools>=0.14",
 ]
+reporting = [
+    "openpyxl>=3.1",
+    "reportlab>=4.0",
+    "matplotlib>=3.8",
+]
 dev = [
     "pytest>=8.0",
     "pytest-asyncio>=0.24",
@@ -52,7 +57,7 @@ dev = [
     "ruff>=0.8",
     "mypy>=1.13",
 ]
-all = ["llm-eval[scorers,modal,agents,dev]"]
+all = ["llm-eval[scorers,modal,agents,reporting,dev]"]
 
 [project.scripts]
 llm-eval = "llm_eval.cli:main"

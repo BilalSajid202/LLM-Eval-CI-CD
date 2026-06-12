@@ -72,7 +72,12 @@ pip install -e ".[dev]"
 
 For full scorer support (embedding relevancy + RAGAS metrics):
 ```bash
-pip install -e ".[scorers,agents,modal,dev]"
+pip install -e ".[scorers,agents,modal,reporting,dev]"
+```
+
+For detailed Excel/PDF evaluation reports:
+```bash
+pip install -e ".[reporting]"
 ```
 
 Without `[scorers]`, hallucination/relevancy/RAGAS use lightweight heuristics — fine for CI unit tests, but install `[scorers]` for production eval accuracy.
@@ -106,15 +111,57 @@ llm-eval run --scope full --trigger manual
 
 | Command | Description |
 |---------|-------------|
-| `llm-eval run` | Execute eval pipeline |
+| `llm-eval run` | Execute eval pipeline (auto-generates Excel/PDF reports) |
+| `llm-eval report` | Generate detailed report for an existing run |
+| `llm-eval compare` | Compare run metrics against historical baseline |
 | `llm-eval gate` | Post GitHub status for existing run |
 | `llm-eval validate-dataset` | Validate golden dataset |
 | `llm-eval analyze` | Run eval + CrewAI failure analysis |
 
 ```bash
 llm-eval run --scope full --trigger pr --sha abc123 --branch feature/x
+llm-eval report --run-id <uuid> --format both
+llm-eval compare --run-id <uuid> --baseline auto --days 7
 llm-eval gate --run-id <uuid> --sha abc123
 ```
+
+## Evaluation Metrics
+
+| Metric | Description |
+|--------|-------------|
+| Hallucination rate | LLM-as-judge verdict on unsupported claims |
+| Answer relevancy | Question–answer semantic similarity |
+| Faithfulness | Answer grounded in retrieved context |
+| Context recall | Retrieved context covers expected facts |
+| Accuracy | Answer vs expected answer overlap |
+| Precision | Source retrieval precision (or answer precision) |
+| Recall | Expected content coverage in answer |
+| F1 score | Harmonic mean of precision and recall |
+| Injection resistance | Refusal rate on `prompt_injection` tagged questions |
+| Jailbreak resistance | Refusal rate on `jailbreak` tagged questions |
+
+## Detailed Reports
+
+After each eval run, reports are saved to `.eval-storage/reports/<run-id>/`:
+
+| File | Contents |
+|------|----------|
+| `evaluation_report.xlsx` | Summary, raw results, metric comparisons, category breakdown, charts |
+| `evaluation_report.pdf` | Executive summary with metrics table, charts, insights |
+| `report.json` | Machine-readable report with comparisons and recommendations |
+
+Excel workbook sheets:
+- **Summary** — run metadata, aggregate metrics, gate results, insights
+- **Raw Results** — per-question scores (accuracy, relevancy, precision, recall, security)
+- **Metric Comparisons** — current vs 7-day baseline with trend indicators
+- **Category Breakdown** — performance by factual/reasoning/edge_case/adversarial
+- **Visualizations** — bar charts for quality metrics and baseline comparison
+
+## Baseline & History
+
+- **History**: Every run is persisted to `.eval-storage/runs/` (metadata) and `.eval-storage/outputs/` (per-question results). Optional PostgreSQL + Grafana for long-term trends.
+- **Baseline**: Rolling 7-day average across all metrics (cost regression gate already used this; now extended to full metric comparison in reports).
+- **Comparison**: `llm-eval compare` shows delta and trend (improved/regressed/stable) per metric.
 
 ## Quality Gates
 
@@ -127,6 +174,9 @@ Configured in `config/eval.yaml`:
 | Faithfulness | < 0.60 | < 0.75 |
 | Answer relevancy | < 0.70 | < 0.78 |
 | Cost regression | > 50% vs baseline | > 20% |
+| Accuracy | < 0.55 | < 0.65 |
+| Injection resistance | < 0.50 | < 0.75 |
+| Jailbreak resistance | < 0.50 | < 0.75 |
 
 Per-question fields in `questions.yaml` (`sla_latency_ms`, `min_relevancy_score`) produce **warn** gates when violated.
 

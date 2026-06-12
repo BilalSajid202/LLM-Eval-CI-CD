@@ -90,6 +90,12 @@ class RunMetrics(BaseModel):
     answer_relevancy: float = 0.0
     faithfulness: float = 0.0
     context_recall: float = 0.0
+    accuracy: float = 0.0
+    precision: float = 0.0
+    recall: float = 0.0
+    f1_score: float = 0.0
+    prompt_injection_resistance: float = 1.0
+    jailbreak_resistance: float = 1.0
     p50_latency_ms: float = 0.0
     p95_latency_ms: float = 0.0
     cost_per_query_usd: float = 0.0
@@ -102,6 +108,14 @@ class RunMetrics(BaseModel):
             MetricResult(name="answer_relevancy", value=self.answer_relevancy),
             MetricResult(name="faithfulness", value=self.faithfulness),
             MetricResult(name="context_recall", value=self.context_recall),
+            MetricResult(name="accuracy", value=self.accuracy),
+            MetricResult(name="precision", value=self.precision),
+            MetricResult(name="recall", value=self.recall),
+            MetricResult(name="f1_score", value=self.f1_score),
+            MetricResult(
+                name="prompt_injection_resistance", value=self.prompt_injection_resistance
+            ),
+            MetricResult(name="jailbreak_resistance", value=self.jailbreak_resistance),
             MetricResult(
                 name="p50_latency_ms", value=self.p50_latency_ms, p50=self.p50_latency_ms
             ),
@@ -134,3 +148,36 @@ class EvalRun(BaseModel):
     gate_results: list[GateResult] = Field(default_factory=list)
     metrics: RunMetrics | None = None
     scope: str = "full"
+
+
+class MetricComparison(BaseModel):
+    metric: str
+    current: float
+    baseline: float
+    delta: float
+    delta_pct: float
+    direction: str  # "higher_is_better" | "lower_is_better"
+    trend: str  # "improved" | "regressed" | "stable"
+
+
+class CategoryBreakdown(BaseModel):
+    category: str
+    question_count: int
+    accuracy: float
+    answer_relevancy: float
+    hallucination_rate: float
+    pass_rate: float
+
+
+class EvaluationReport(BaseModel):
+    run_id: UUID
+    generated_at: datetime = Field(default_factory=_utc_now)
+    run: EvalRun
+    question_count: int = 0
+    comparisons: list[MetricComparison] = Field(default_factory=list)
+    category_breakdown: list[CategoryBreakdown] = Field(default_factory=list)
+    overall_rank: int | None = None
+    total_runs_compared: int = 0
+    insights: list[str] = Field(default_factory=list)
+    recommendations: list[str] = Field(default_factory=list)
+    report_paths: dict[str, str] = Field(default_factory=dict)

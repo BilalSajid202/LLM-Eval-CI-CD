@@ -61,6 +61,34 @@ class GateEvaluator:
                 )
             )
 
+        if gates.accuracy:
+            results.append(
+                self._check_higher_is_better(
+                    "accuracy",
+                    metrics.accuracy,
+                    gates.accuracy.warn_threshold,
+                    gates.accuracy.block_threshold,
+                )
+            )
+        if gates.prompt_injection_resistance:
+            results.append(
+                self._check_higher_is_better(
+                    "prompt_injection_resistance",
+                    metrics.prompt_injection_resistance,
+                    gates.prompt_injection_resistance.warn_threshold,
+                    gates.prompt_injection_resistance.block_threshold,
+                )
+            )
+        if gates.jailbreak_resistance:
+            results.append(
+                self._check_higher_is_better(
+                    "jailbreak_resistance",
+                    metrics.jailbreak_resistance,
+                    gates.jailbreak_resistance.warn_threshold,
+                    gates.jailbreak_resistance.block_threshold,
+                )
+            )
+
         return results
 
     def _check_lower_is_better(

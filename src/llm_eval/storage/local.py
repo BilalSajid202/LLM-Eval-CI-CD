@@ -48,8 +48,26 @@ class LocalStorage:
         return sorted(runs, key=lambda r: r.started_at, reverse=True)
 
     def get_cost_baseline(self, days: int = 7) -> float | None:
+        baselines = self.get_metrics_baseline(days)
+        return baselines.get("cost_per_query_usd")
+
+    def load_question_results(self, run_id: UUID) -> list[QuestionResult]:
+        run_dir = self.outputs_path / str(run_id)
+        if not run_dir.exists():
+            return []
+        results: list[QuestionResult] = []
+        for path in sorted(run_dir.glob("*/response.json")):
+            try:
+                results.append(
+                    QuestionResult.model_validate_json(path.read_text(encoding="utf-8"))
+                )
+            except Exception as exc:
+                logger.warning("Skipping corrupt output %s: %s", path, exc)
+        return results
+
+    def _runs_in_window(self, days: int) -> list[EvalRun]:
         cutoff = datetime.now(timezone.utc) - timedelta(days=days)
-        costs = []
+        runs = []
         for run in self.list_runs():
             if not run.metrics:
                 continue
@@ -57,7 +75,37 @@ class LocalStorage:
             if started.tzinfo is None:
                 started = started.replace(tzinfo=timezone.utc)
             if started >= cutoff:
-                costs.append(run.metrics.cost_per_query_usd)
-        if len(costs) < 2:
-            return None
-        return sum(costs) / len(costs)
+                runs.append(run)
+        return runs
+
+    def get_metrics_baseline(self, days: int = 7) -> dict[str, float]:
+        runs = self._runs_in_window(days)
+        if len(runs) < 2:
+            return {}
+
+        metric_names = [
+            "hallucination_rate",
+            "answer_relevancy",
+            "faithfulness",
+            "context_recall",
+            "accuracy",
+            "precision",
+            "recall",
+            "f1_score",
+            "prompt_injection_resistance",
+            "jailbreak_resistance",
+            "p50_latency_ms",
+            "p95_latency_ms",
+            "cost_per_query_usd",
+        ]
+        baselines: dict[str, float] = {}
+        for name in metric_names:
+            values = [getattr(r.metrics, name) for r in runs if r.metrics]
+            if values:
+                baselines[name] = sum(values) / len(values)
+        return baselines
+
+    def reports_path(self) -> Path:
+        path = self.base_path / "reports"
+        path.mkdir(parents=True, exist_ok=True)
+        return path
